@@ -5,7 +5,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 load_dotenv()
 
-ADMIN_ID =  os.getenv('ADMIN_ID') # tu user_id de Telegram, solo tú puedes usar el comando
+ADMIN_ID = int(os.getenv('ADMIN_ID')) # tu user_id de Telegram, solo tú puedes usar el comando
 PETICION_PATH = "ver_chats_request.txt"
 
 async def ver_chats(update: Update, context: ContextTypes.DEFAULT_TYPE):

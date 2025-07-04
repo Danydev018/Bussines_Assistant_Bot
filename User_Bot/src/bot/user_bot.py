@@ -1,9 +1,16 @@
+
 import os
-from dotenv import load_dotenv
+import sys
 import time
+from dotenv import load_dotenv
 from telethon import TelegramClient, events
 from collections import defaultdict
 import requests
+# Importar save_message del almacenamiento compartido del panel
+import sys
+import pathlib
+sys.path.append(str(pathlib.Path(__file__).resolve().parent.parent.parent.parent))
+from shared_storage import save_message
 
 load_dotenv()
 
@@ -11,7 +18,7 @@ API_ID = os.getenv('API_ID')
 API_HASH = os.getenv('API_HASH')
 SESSION = 'userbot_session'
 TOKEN_BOTFATHER = os.getenv('TOKEN_BOTFATHER')
-ADMIN_ID =  os.getenv('ADMIN_ID') # tu user_id de Telegram
+ADMIN_ID = int(os.getenv('ADMIN_ID')) # tu user_id de Telegram
 PETICION_PATH = "ver_chats_request.txt"
 
 CATEGORIAS = {
@@ -41,15 +48,19 @@ def enviar_al_botfather(mensaje):
         "parse_mode": "Markdown"
     }
     requests.post(url, data=payload)
-
 @client.on(events.NewMessage(incoming=True))
 async def handler(event):
+    # Solo responder y almacenar si es chat privado
+    if not event.is_private:
+        return
     sender = await event.get_sender()
-    if sender.is_self:
+    if sender.is_self or getattr(sender, 'bot', False):
         return
     categoria = categorizar(event.text or "")
     chats_categorizados[categoria].add(sender.id)
     ultimos_mensajes[sender.id] = event.text
+    # Guardar mensaje en el archivo compartido
+    save_message(sender.id, event.text)
     await event.reply("¡Gracias por tu mensaje! Te responderé pronto.")
 
 def resumen_chats():
