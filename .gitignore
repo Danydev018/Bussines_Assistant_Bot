@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+
+# Environment
+.env
+.env.*
+
+# VSCode
+.vscode/
+
+# Databases
+*.db
+shared_messages.db
+
+# Telegram session files
+*.session
+
+# System
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Workspace
+*.code-workspace
+
+# Backup files
+*~
+*.bak
+
+# Others
+# Add any other sensitive or generated files below
