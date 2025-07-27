@@ -1,4 +1,3 @@
-
 import os
 import sys
 import time
@@ -19,7 +18,12 @@ API_HASH = os.getenv('API_HASH')
 SESSION = 'userbot_session'
 TOKEN_BOTFATHER = os.getenv('TOKEN_BOTFATHER')
 ADMIN_ID = int(os.getenv('ADMIN_ID')) # tu user_id de Telegram
+
+
 PETICION_PATH = "ver_chats_request.txt"
+# Usar la misma ruta absoluta que el Panel_Bot
+BASE_DIR = pathlib.Path(__file__).resolve().parent.parent.parent
+RESPUESTAS_PATH = str(BASE_DIR / "src/bot/respuestas_pendientes.txt")
 
 CATEGORIAS = {
     'trabajo': ['reporte', 'oficina', 'reunión', 'trabajo', 'jefe'],
@@ -72,18 +76,43 @@ def resumen_chats():
             msg += f"- Usuario `{user_id}`: {last_msg[:30]}...\n"
     return msg
 
-def loop_peticion():
+
+import asyncio
+async def loop_peticion():
     print("Userbot iniciado y esperando peticiones del admin bot...")
+    print(f"[DEBUG User_Bot] Esperando en ruta: {os.getcwd()}")
+    print(f"[DEBUG User_Bot] RESPUESTAS_PATH: {RESPUESTAS_PATH}")
     while True:
+        # Petición de resumen de chats
         if os.path.exists(PETICION_PATH):
             msg = resumen_chats()
             enviar_al_botfather(msg)
             os.remove(PETICION_PATH)
-        time.sleep(2)
+        # Revisión de respuestas pendientes
+        if os.path.exists(RESPUESTAS_PATH):
+            print(f"[DEBUG User_Bot] Revisando archivo de respuestas: {RESPUESTAS_PATH}")
+            with open(RESPUESTAS_PATH, "r") as f:
+                lines = f.readlines()
+            print(f"[DEBUG User_Bot] Cantidad de líneas a procesar: {len(lines)}")
+            pendientes = []
+            for line in lines:
+                try:
+                    user_id, mensaje = line.strip().split("|", 1)
+                    print(f"[DEBUG User_Bot] Reenviando a {user_id}: {mensaje}")
+                    await client.send_message(int(user_id), mensaje)
+                except Exception as e:
+                    import traceback
+                    print(f"[DEBUG User_Bot] Error al reenviar a {user_id}: {e}\n{traceback.format_exc()}")
+                    pendientes.append(line)  # Si falla, lo dejamos pendiente
+            # Sobrescribir archivo solo con los pendientes
+            with open(RESPUESTAS_PATH, "w") as f:
+                f.writelines(pendientes)
+            print(f"[DEBUG User_Bot] Fin de revisión de respuestas pendientes")
+        else:
+            print(f"[DEBUG User_Bot] Archivo de respuestas NO existe: {RESPUESTAS_PATH}")
+        await asyncio.sleep(2)
 
 if __name__ == "__main__":
     with client:
-        from threading import Thread
-        t = Thread(target=loop_peticion, daemon=True)
-        t.start()
+        client.loop.create_task(loop_peticion())
         client.run_until_disconnected()
