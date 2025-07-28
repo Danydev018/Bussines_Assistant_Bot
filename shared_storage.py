@@ -1,5 +1,6 @@
 import sqlite3
 import pathlib
+import datetime
 
 # Ruta absoluta a la base de datos compartida
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parent
@@ -30,9 +31,10 @@ def initialize_database():
             user_id TEXT NOT NULL,
             text TEXT NOT NULL,
             turno INTEGER NOT NULL,
-            estado TEXT NOT NULL DEFAULT 'pendiente', -- pendiente, atendido, archivado
+            estado TEXT NOT NULL DEFAULT 'pendiente', -- pendiente, atendido, seguimiento, archivado
             categoria TEXT,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            last_status_change_timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     ''')
     # Tabla de respuestas del administrador
@@ -66,7 +68,7 @@ def save_message(user_id, text):
     categoria = categorizar(text)
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute('INSERT INTO messages (user_id, text, turno, estado, categoria) VALUES (?, ?, ?, ?, ?)', (str(user_id), text, turno, 'pendiente', categoria))
+    c.execute('INSERT INTO messages (user_id, text, turno, estado, categoria, last_status_change_timestamp) VALUES (?, ?, ?, ?, ?, ?)', (str(user_id), text, turno, 'pendiente', categoria, datetime.datetime.now().isoformat()))
     conn.commit()
     conn.close()
 
@@ -75,9 +77,9 @@ def get_messages(user_id, include_archived=False):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     if include_archived:
-        c.execute('SELECT id, text, turno, estado, timestamp, categoria FROM messages WHERE user_id = ? ORDER BY id', (str(user_id),))
+        c.execute('SELECT id, text, turno, estado, categoria, timestamp, last_status_change_timestamp FROM messages WHERE user_id = ? ORDER BY id', (str(user_id),))
     else:
-        c.execute('SELECT id, text, turno, estado, timestamp, categoria FROM messages WHERE user_id = ? AND estado != "archivado" ORDER BY id', (str(user_id),))
+        c.execute('SELECT id, text, turno, estado, categoria, timestamp, last_status_change_timestamp FROM messages WHERE user_id = ? AND estado != "archivado" ORDER BY id', (str(user_id),))
     rows = c.fetchall()
     conn.close()
     return [
@@ -86,8 +88,9 @@ def get_messages(user_id, include_archived=False):
             'text': row[1],
             'turno': row[2],
             'estado': row[3],
-            'timestamp': row[4],
-            'categoria': row[5]
+            'categoria': row[4],
+            'timestamp': row[5],
+            'last_status_change_timestamp': row[6]
         }
         for row in rows
     ]
@@ -96,7 +99,7 @@ def get_messages(user_id, include_archived=False):
 def get_all_chats(estado_filtro=None, include_archived=False):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    query = 'SELECT user_id, id, text, turno, estado, timestamp, categoria FROM messages'
+    query = 'SELECT user_id, id, text, turno, estado, categoria, timestamp, last_status_change_timestamp FROM messages'
     conditions = []
     params = []
 
@@ -114,41 +117,37 @@ def get_all_chats(estado_filtro=None, include_archived=False):
     rows = c.fetchall()
     conn.close()
     chats = {}
-    for user_id, id_, text, turno, estado, timestamp, categoria in rows:
+    for user_id, id_, text, turno, estado, categoria, timestamp, last_status_change_timestamp in rows:
         chats.setdefault(user_id, []).append({
             'id': id_,
             'text': text,
             'turno': turno,
             'estado': estado,
+            'categoria': categoria,
             'timestamp': timestamp,
-            'categoria': categoria
+            'last_status_change_timestamp': last_status_change_timestamp
         })
     return chats
 
 # --- Funciones de gestión de estado ---
-def marcar_atendido(user_id):
-    """Marca todos los mensajes de un usuario como atendidos."""
+def _update_chat_status(user_id, new_status):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute('UPDATE messages SET estado = "atendido" WHERE user_id = ?', (str(user_id),))
+    c.execute('UPDATE messages SET estado = ?, last_status_change_timestamp = ? WHERE user_id = ?', (new_status, datetime.datetime.now().isoformat(), str(user_id)))
     conn.commit()
     conn.close()
+
+def marcar_atendido(user_id):
+    """Marca todos los mensajes de un usuario como atendidos."""
+    _update_chat_status(user_id, "atendido")
 
 def marcar_seguimiento(user_id):
     """Marca todos los mensajes de un usuario como en seguimiento."""
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute('UPDATE messages SET estado = "seguimiento" WHERE user_id = ?', (str(user_id),))
-    conn.commit()
-    conn.close()
+    _update_chat_status(user_id, "seguimiento")
 
 def archivar_chat(user_id):
     """Archiva todos los mensajes de un usuario."""
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute('UPDATE messages SET estado = "archivado" WHERE user_id = ?', (str(user_id),))
-    conn.commit()
-    conn.close()
+    _update_chat_status(user_id, "archivado")
 
 def get_user_status(user_id):
     """Obtiene el estado más reciente de un usuario."""
@@ -181,6 +180,31 @@ def cancel_turn(user_id):
     """Cancela el turno de un usuario archivando su chat."""
     archivar_chat(user_id)
 
+# --- Funciones de resumen ---
+def get_summary_by_status():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('SELECT estado, COUNT(DISTINCT user_id) FROM messages GROUP BY estado')
+    rows = c.fetchall()
+    conn.close()
+    return {estado: count for estado, count in rows}
+
+def get_daily_attended_chats_count():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    today = datetime.date.today().isoformat()
+    c.execute('SELECT COUNT(DISTINCT user_id) FROM messages WHERE estado = "atendido" AND DATE(last_status_change_timestamp) = ?', (today,))
+    result = c.fetchone()
+    conn.close()
+    return result[0] if result else 0
+
+def get_pending_chats_count():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('SELECT COUNT(DISTINCT user_id) FROM messages WHERE estado = "pendiente"')
+    result = c.fetchone()
+    conn.close()
+    return result[0] if result else 0
 
 # --- Funciones para la tabla 'respuestas' ---
 
@@ -215,3 +239,4 @@ def mark_respuesta_sent(respuesta_id):
     c.execute('UPDATE respuestas SET estado = "enviado" WHERE id = ?', (respuesta_id,))
     conn.commit()
     conn.close()
+

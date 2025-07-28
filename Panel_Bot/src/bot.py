@@ -7,7 +7,7 @@ import sys
 import pathlib
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parent.parent.parent))
-from shared_storage import get_all_chats, get_messages, marcar_atendido, marcar_seguimiento, archivar_chat, save_respuesta
+from shared_storage import get_all_chats, get_messages, marcar_atendido, marcar_seguimiento, archivar_chat, save_respuesta, get_summary_by_status, get_daily_attended_chats_count, get_pending_chats_count
 
 load_dotenv()
 
@@ -36,6 +36,20 @@ async def recordatorio_chats_pendientes(context: ContextTypes.DEFAULT_TYPE):
             msg += f"- Usuario `{user_id}`\n"
         await context.bot.send_message(chat_id=ADMIN_ID, text=msg, parse_mode="Markdown")
 
+def _build_summary_message():
+    summary_by_status = get_summary_by_status()
+    daily_attended = get_daily_attended_chats_count()
+    pending_count = get_pending_chats_count()
+
+    msg = "*Resumen de Chats:*\n\n"
+    msg += "*Por Estado:*\n"
+    for status, count in summary_by_status.items():
+        msg += f"- {status.capitalize()}: {count} chats\n"
+
+    msg += f"\n*Atendidos Hoy:* {daily_attended} chats\n"
+    msg += f"*Pendientes en Cola:* {pending_count} chats\n"
+    return msg
+
 async def chats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Determinar si la llamada viene de un comando o de un callback
     if update.callback_query:
@@ -51,12 +65,13 @@ async def chats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chats = get_all_chats(estado_filtro=current_filter)
     chats = {uid: msgs for uid, msgs in chats.items() if msgs}
 
-    msg = f"*Chats registrados (Filtrado por: {current_filter.capitalize()})*: \n"
+    msg = "" # Inicializar msg aquí, se construirá condicionalmente
     keyboard = []
 
     if not chats:
-        msg += f"\nNo hay chats registrados con estado '{current_filter}'."
+        msg = f"*No hay chats registrados con estado '{current_filter}'.*\n\n" + _build_summary_message() # Mostrar mensaje específico y luego resumen
     else:
+        msg = f"*Chats registrados (Filtrado por: {current_filter.capitalize()})*: \n"
         for user_id, mensajes in chats.items():
             turnos = [m['turno'] for m in mensajes if m['estado'] == 'pendiente']
             estado = mensajes[-1].get('estado', 'desconocido') # Obtener el estado del último mensaje
@@ -66,20 +81,43 @@ async def chats(update: Update, context: ContextTypes.DEFAULT_TYPE):
             keyboard.append([InlineKeyboardButton(f"Ver mensajes de {user_id}", callback_data=f"ver_{user_id}")])
     
     # Botones de filtro (siempre se muestran)
-    filter_buttons = [
+    filter_buttons_row1 = [
         InlineKeyboardButton("Pendientes", callback_data="filter_pendiente"),
-        InlineKeyboardButton("En Seguimiento", callback_data="filter_seguimiento"),
+        InlineKeyboardButton("En Seguimiento", callback_data="filter_seguimiento")
+    ]
+    filter_buttons_row2 = [
         InlineKeyboardButton("Atendidos", callback_data="filter_atendido"),
         InlineKeyboardButton("Archivados", callback_data="filter_archivado")
     ]
-    keyboard.append(filter_buttons)
+    summary_button_row = [
+        InlineKeyboardButton("Resumen", callback_data="show_resumen")
+    ]
+    keyboard.append(filter_buttons_row1)
+    keyboard.append(filter_buttons_row2)
+    keyboard.append(summary_button_row)
 
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    if update.callback_query:
-        await message_to_edit.edit_text(msg, parse_mode="Markdown", reply_markup=reply_markup)
-    else:
-        await message_to_edit.reply_text(msg, parse_mode="Markdown", reply_markup=reply_markup)
+    reply_markup = InlineKeyboardMarkup(keyboard) # Asegurar que reply_markup siempre se define
+
+    # Construir el nuevo mensaje y teclado
+    new_msg = msg
+    new_reply_markup = reply_markup
+
+    # Obtener el mensaje actual para comparar
+    current_message_text = None
+    current_reply_markup = None
+    if update.callback_query and message_to_edit:
+        current_message_text = message_to_edit.text
+        current_reply_markup = message_to_edit.reply_markup
+
+    # Solo editar si el contenido o el teclado son diferentes
+    if (current_message_text != new_msg or 
+        str(current_reply_markup) != str(new_reply_markup)):
+        if update.callback_query:
+            await message_to_edit.edit_text(new_msg, parse_mode="Markdown", reply_markup=new_reply_markup)
+        else:
+            await message_to_edit.reply_text(new_msg, parse_mode="Markdown", reply_markup=new_reply_markup)
+    elif not update.callback_query: # Si no es un callback, siempre responder al comando /chats
+        await message_to_edit.reply_text(new_msg, parse_mode="Markdown", reply_markup=new_reply_markup)
 
 async def ver_mensajes_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -156,6 +194,21 @@ async def filter_chats_callback(update: Update, context: ContextTypes.DEFAULT_TY
     context.user_data['chat_filter'] = filter_state
     await chats(update, context) # Volver a llamar a chats con el nuevo filtro
 
+async def resumen_chats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Esta función es para el comando /resumen
+    msg = _build_summary_message()
+    await update.message.reply_text(msg, parse_mode="Markdown")
+
+async def show_resumen_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    msg = _build_summary_message()
+    
+    # Obtener el reply_markup actual del mensaje para mantener los botones
+    current_reply_markup = query.message.reply_markup
+
+    await query.edit_message_text(msg, parse_mode="Markdown", reply_markup=current_reply_markup)
+
 if __name__ == "__main__":
     app = ApplicationBuilder().token(TOKEN_BOTFATHER).build()
     job_queue = app.job_queue
@@ -163,9 +216,11 @@ if __name__ == "__main__":
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("chats", chats))
+    app.add_handler(CommandHandler("resumen", resumen_chats))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(CallbackQueryHandler(ver_mensajes_callback, pattern=r"^ver_.*?$"))
     app.add_handler(CallbackQueryHandler(gestion_callback, pattern=r"^(atendido_|seguimiento_|archivar_|responder_).*?$"))
     app.add_handler(CallbackQueryHandler(filter_chats_callback, pattern=r"^filter_.*?$"))
+    app.add_handler(CallbackQueryHandler(show_resumen_callback, pattern=r"^show_resumen$"))
 
     app.run_polling(allowed_updates=Update.ALL_TYPES)
