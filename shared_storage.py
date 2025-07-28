@@ -131,6 +131,38 @@ def archivar_chat(user_id):
     conn.commit()
     conn.close()
 
+def get_user_status(user_id):
+    """Obtiene el estado más reciente de un usuario."""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('SELECT estado FROM messages WHERE user_id = ? ORDER BY timestamp DESC LIMIT 1', (str(user_id),))
+    result = c.fetchone()
+    conn.close()
+    return result[0] if result else None
+
+def get_user_position(user_id):
+    """Calcula la posición en la cola de un usuario pendiente."""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('''
+        SELECT user_id, MIN(turno) as primer_turno
+        FROM messages
+        WHERE estado = "pendiente"
+        GROUP BY user_id
+        ORDER BY primer_turno ASC
+    ''')
+    usuarios_pendientes = c.fetchall()
+    conn.close()
+    for i, (uid, _) in enumerate(usuarios_pendientes):
+        if uid == str(user_id):
+            return i + 1
+    return None
+
+def cancel_turn(user_id):
+    """Cancela el turno de un usuario archivando su chat."""
+    archivar_chat(user_id)
+
+
 # --- Funciones para la tabla 'respuestas' ---
 
 def save_respuesta(user_id_destino, texto_respuesta):

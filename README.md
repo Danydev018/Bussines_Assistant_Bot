@@ -39,3 +39,10 @@ python3 User_Bot/src/bot/user_bot.py
 ```bash
 python3 Panel_Bot/src/bot.py
 ```
+
+### Interacción con el User_Bot (para Clientes)
+
+Además de los botones que el bot te pueda mostrar, puedes interactuar con el User_Bot usando los siguientes comandos de texto:
+
+- Para **consultar tu turno**, simplemente escribe: `turno`
+- Para **cancelar tu turno**, simplemente escribe: `cancelar`

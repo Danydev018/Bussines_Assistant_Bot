@@ -2,12 +2,12 @@ import os
 import sys
 import asyncio
 from dotenv import load_dotenv
-from telethon import TelegramClient, events
+from telethon import TelegramClient, events, Button
 import requests
 import pathlib
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parent.parent.parent.parent))
-from shared_storage import save_message, get_pending_respuestas, mark_respuesta_sent, get_all_chats
+from shared_storage import save_message, get_pending_respuestas, mark_respuesta_sent, get_all_chats, get_user_status, get_user_position, cancel_turn
 
 load_dotenv()
 
@@ -30,6 +30,17 @@ def enviar_al_botfather(mensaje):
     }
     requests.post(url, data=payload)
 
+async def consultar_turno_action(event, user_id):
+    position = get_user_position(user_id)
+    if position:
+        await event.reply(f"Tu turno es el #{position}.")
+    else:
+        await event.reply("No tienes un turno pendiente en este momento.")
+
+async def cancelar_turno_action(event, user_id):
+    cancel_turn(user_id)
+    await event.reply("Tu turno ha sido cancelado y tu chat archivado.")
+
 @client.on(events.NewMessage(incoming=True))
 async def handler(event):
     if not event.is_private:
@@ -37,17 +48,45 @@ async def handler(event):
     sender = await event.get_sender()
     if sender.is_self or getattr(sender, 'bot', False):
         return
-    save_message(sender.id, event.text)
-    await event.reply("¡Gracias por tu mensaje! Te responderé pronto.")
+
+    user_id = str(sender.id)
+    user_status = get_user_status(user_id)
+    text = event.text.lower().strip()
+
+    buttons = [
+        [Button.inline("Consultar mi Turno", data=b"consultar_turno")],
+        [Button.inline("Cancelar mi Turno", data=b"cancelar_turno")]
+    ]
+
+    if text == "turno":
+        await consultar_turno_action(event, user_id)
+    elif text == "cancelar":
+        await cancelar_turno_action(event, user_id)
+    elif user_status in ["pendiente", "seguimiento"]:
+        await event.reply("Puedes consultar o cancelar tu turno:", buttons=buttons)
+    else:
+        save_message(user_id, event.text)
+        await event.reply("¡Gracias por tu mensaje! Te responderé pronto. Puedes consultar tu turno escribiendo `turno` o cancelarlo escribiendo `cancelar`.", buttons=buttons)
+
+@client.on(events.CallbackQuery(data=b"consultar_turno"))
+async def consultar_turno_callback(event):
+    user_id = str(event.sender_id)
+    await event.answer("", alert=False) # Dismiss the loading indicator
+    await consultar_turno_action(event, user_id)
+
+@client.on(events.CallbackQuery(data=b"cancelar_turno"))
+async def cancelar_turno_callback(event):
+    user_id = str(event.sender_id)
+    await event.answer("", alert=False) # Dismiss the loading indicator
+    await cancelar_turno_action(event, user_id)
 
 async def loop_notificaciones():
     while True:
         chats = get_all_chats()
         if not chats:
-            await asyncio.sleep(60)
+            await asyncio.sleep(1800)
             continue
 
-        # Obtener solo los usuarios con estado pendiente
         usuarios_pendientes = sorted([
             (user_id, min(m['turno'] for m in mensajes if m['estado'] == 'pendiente'))
             for user_id, mensajes in chats.items()
@@ -63,11 +102,10 @@ async def loop_notificaciones():
                 except Exception as e:
                     print(f"Error al notificar a {user_id}: {e}")
         
-        # Limpiar usuarios notificados que ya no están en la cola
         current_pending_ids = {user_id for user_id, _ in usuarios_pendientes}
         notified_users.intersection_update(current_pending_ids)
 
-        await asyncio.sleep(300) # Notificar cada 5 minutos
+        await asyncio.sleep(1800) # Notificar cada 30 minutos
 
 async def loop_respuestas():
     print("Userbot iniciado y esperando respuestas para enviar...")
@@ -87,3 +125,4 @@ if __name__ == "__main__":
         client.loop.create_task(loop_respuestas())
         client.loop.create_task(loop_notificaciones())
         client.run_until_disconnected()
+
