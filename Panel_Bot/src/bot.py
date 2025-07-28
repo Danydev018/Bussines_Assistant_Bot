@@ -1,18 +1,21 @@
 import os
 import datetime
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from dotenv import load_dotenv
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler
 import sys
 import pathlib
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parent.parent.parent))
-from shared_storage import get_all_chats, get_messages, marcar_atendido, archivar_chat, save_respuesta
+from shared_storage import get_all_chats, get_messages, marcar_atendido, marcar_seguimiento, archivar_chat, save_respuesta
 
 load_dotenv()
 
 ADMIN_ID = int(os.getenv('ADMIN_ID'))
 TOKEN_BOTFATHER = os.getenv("TOKEN_BOTFATHER")
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("¡Hola! Soy tu bot de administración. Usa /chats para ver las conversaciones.")
 
 async def recordatorio_chats_pendientes(context: ContextTypes.DEFAULT_TYPE):
     chats = get_all_chats()
@@ -34,29 +37,55 @@ async def recordatorio_chats_pendientes(context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(chat_id=ADMIN_ID, text=msg, parse_mode="Markdown")
 
 async def chats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chats = get_all_chats()
+    # Determinar si la llamada viene de un comando o de un callback
+    if update.callback_query:
+        query = update.callback_query
+        await query.answer()
+        message_to_edit = query.message
+    else:
+        message_to_edit = update.message
+
+    # Obtener el filtro actual del usuario o establecer "pendiente" por defecto
+    current_filter = context.user_data.get('chat_filter', 'pendiente')
+
+    chats = get_all_chats(estado_filtro=current_filter)
     chats = {uid: msgs for uid, msgs in chats.items() if msgs}
-    if not chats:
-        await update.message.reply_text("No hay chats registrados.")
-        return
-    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-    msg = "*Chats registrados:*\n"
+
+    msg = f"*Chats registrados (Filtrado por: {current_filter.capitalize()})*: \n"
     keyboard = []
-    for user_id, mensajes in chats.items():
-        turnos = [m['turno'] for m in mensajes if m['estado'] == 'pendiente']
-        estado = 'pendiente' if any(m['estado'] == 'pendiente' for m in mensajes) else 'atendido'
-        turno = min(turnos) if turnos else '-'
-        categoria = mensajes[-1].get('categoria', 'otros') # Obtener la categoría del último mensaje
-        msg += f"\nUsuario `{user_id}`: {len(mensajes)} mensajes | Turno: {turno} | Estado: {estado} | Cat: {categoria}"
-        keyboard.append([InlineKeyboardButton(f"Ver mensajes de {user_id}", callback_data=f"ver_{user_id}")])
-    reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
-    await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=reply_markup)
+
+    if not chats:
+        msg += f"\nNo hay chats registrados con estado '{current_filter}'."
+    else:
+        for user_id, mensajes in chats.items():
+            turnos = [m['turno'] for m in mensajes if m['estado'] == 'pendiente']
+            estado = mensajes[-1].get('estado', 'desconocido') # Obtener el estado del último mensaje
+            turno = min(turnos) if turnos else '-'
+            categoria = mensajes[-1].get('categoria', 'otros')
+            msg += f"\nUsuario `{user_id}`: {len(mensajes)} mensajes | Turno: {turno} | Estado: {estado} | Cat: {categoria}"
+            keyboard.append([InlineKeyboardButton(f"Ver mensajes de {user_id}", callback_data=f"ver_{user_id}")])
+    
+    # Botones de filtro (siempre se muestran)
+    filter_buttons = [
+        InlineKeyboardButton("Pendientes", callback_data="filter_pendiente"),
+        InlineKeyboardButton("En Seguimiento", callback_data="filter_seguimiento"),
+        InlineKeyboardButton("Atendidos", callback_data="filter_atendido"),
+        InlineKeyboardButton("Archivados", callback_data="filter_archivado")
+    ]
+    keyboard.append(filter_buttons)
+
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    if update.callback_query:
+        await message_to_edit.edit_text(msg, parse_mode="Markdown", reply_markup=reply_markup)
+    else:
+        await message_to_edit.reply_text(msg, parse_mode="Markdown", reply_markup=reply_markup)
 
 async def ver_mensajes_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user_id = query.data.replace("ver_", "")
-    mensajes = get_messages(user_id)
+    mensajes = get_messages(user_id, include_archived=True)
     if not mensajes:
         await query.edit_message_text(f"No hay mensajes para el usuario {user_id}.")
         return
@@ -67,9 +96,10 @@ async def ver_mensajes_callback(update: Update, context: ContextTypes.DEFAULT_TY
     keyboard = [
         [
             InlineKeyboardButton("✅ Marcar como atendido", callback_data=f"atendido_{user_id}"),
-            InlineKeyboardButton("🗄️ Archivar Chat", callback_data=f"archivar_{user_id}")
+            InlineKeyboardButton("🔄 En Seguimiento", callback_data=f"seguimiento_{user_id}")
         ],
         [
+            InlineKeyboardButton("🗄️ Archivar Chat", callback_data=f"archivar_{user_id}"),
             InlineKeyboardButton("✉️ Responder", callback_data=f"responder_{user_id}")
         ]
     ]
@@ -84,6 +114,10 @@ async def gestion_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = data.replace("atendido_", "")
         marcar_atendido(user_id)
         await query.edit_message_text(f"✅ Chat de {user_id} marcado como atendido.")
+    elif data.startswith("seguimiento_"):
+        user_id = data.replace("seguimiento_", "")
+        marcar_seguimiento(user_id)
+        await query.edit_message_text(f"🔄 Chat de {user_id} marcado como en seguimiento.")
     elif data.startswith("archivar_"):
         user_id = data.replace("archivar_", "")
         archivar_chat(user_id)
@@ -108,8 +142,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['responder_a'] = None
         return
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("¡Hola! Soy tu bot de administración. Usa /chats para ver las conversaciones.")
+async def filter_chats_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    filter_state = query.data.replace("filter_", "")
+    
+    current_filter = context.user_data.get('chat_filter', 'pendiente')
+
+    if current_filter == filter_state:
+        # Si el filtro es el mismo, no hacer nada para evitar el error "Message is not modified"
+        return
+
+    context.user_data['chat_filter'] = filter_state
+    await chats(update, context) # Volver a llamar a chats con el nuevo filtro
 
 if __name__ == "__main__":
     app = ApplicationBuilder().token(TOKEN_BOTFATHER).build()
@@ -119,7 +164,8 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("chats", chats))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    app.add_handler(CallbackQueryHandler(ver_mensajes_callback, pattern=r"^ver_.*?"))
-    app.add_handler(CallbackQueryHandler(gestion_callback, pattern=r"^(atendido_|archivar_|responder_).*?"))
+    app.add_handler(CallbackQueryHandler(ver_mensajes_callback, pattern=r"^ver_.*?$"))
+    app.add_handler(CallbackQueryHandler(gestion_callback, pattern=r"^(atendido_|seguimiento_|archivar_|responder_).*?$"))
+    app.add_handler(CallbackQueryHandler(filter_chats_callback, pattern=r"^filter_.*?$"))
 
     app.run_polling(allowed_updates=Update.ALL_TYPES)

@@ -93,13 +93,24 @@ def get_messages(user_id, include_archived=False):
     ]
 
 
-def get_all_chats(include_archived=False):
+def get_all_chats(estado_filtro=None, include_archived=False):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    if include_archived:
-        c.execute('SELECT user_id, id, text, turno, estado, timestamp, categoria FROM messages ORDER BY id')
-    else:
-        c.execute('SELECT user_id, id, text, turno, estado, timestamp, categoria FROM messages WHERE estado != "archivado" ORDER BY id')
+    query = 'SELECT user_id, id, text, turno, estado, timestamp, categoria FROM messages'
+    conditions = []
+    params = []
+
+    if estado_filtro:
+        conditions.append('estado = ?')
+        params.append(estado_filtro)
+    elif not include_archived:
+        conditions.append('estado != "archivado"')
+
+    if conditions:
+        query += ' WHERE ' + ' AND '.join(conditions)
+    query += ' ORDER BY id'
+
+    c.execute(query, params)
     rows = c.fetchall()
     conn.close()
     chats = {}
@@ -120,6 +131,14 @@ def marcar_atendido(user_id):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('UPDATE messages SET estado = "atendido" WHERE user_id = ?', (str(user_id),))
+    conn.commit()
+    conn.close()
+
+def marcar_seguimiento(user_id):
+    """Marca todos los mensajes de un usuario como en seguimiento."""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('UPDATE messages SET estado = "seguimiento" WHERE user_id = ?', (str(user_id),))
     conn.commit()
     conn.close()
 
