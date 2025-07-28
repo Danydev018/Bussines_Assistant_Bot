@@ -5,23 +5,53 @@ import pathlib
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parent
 DB_PATH = str(PROJECT_ROOT / 'shared_messages.db')
 
+CATEGORIAS = {
+    'trabajo': ['reporte', 'oficina', 'reunión', 'trabajo', 'jefe'],
+    'familia': ['mamá', 'papá', 'hermano', 'familia'],
+    'amigos': ['fiesta', 'amigo', 'salida', 'birra'],
+    'otros': []
+}
 
-# Inicializar la base de datos y la tabla si no existen
-conn = sqlite3.connect(DB_PATH)
-c = conn.cursor()
-c.execute('''
-    CREATE TABLE IF NOT EXISTS messages (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id TEXT NOT NULL,
-        text TEXT NOT NULL,
-        turno INTEGER NOT NULL,
-        estado TEXT NOT NULL DEFAULT 'pendiente',
-        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-''')
-conn.commit()
-conn.close()
+def categorizar(mensaje):
+    mensaje = mensaje.lower()
+    for categoria, palabras in CATEGORIAS.items():
+        if any(palabra in mensaje for palabra in palabras):
+            return categoria
+    return 'otros'
 
+# --- Inicialización de la Base de Datos ---
+def initialize_database():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    # Tabla de mensajes de clientes
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            text TEXT NOT NULL,
+            turno INTEGER NOT NULL,
+            estado TEXT NOT NULL DEFAULT 'pendiente', -- pendiente, atendido, archivado
+            categoria TEXT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    # Tabla de respuestas del administrador
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS respuestas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id_destino TEXT NOT NULL,
+            texto_respuesta TEXT NOT NULL,
+            estado TEXT NOT NULL DEFAULT 'pendiente' -- pendiente, enviado
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+# Llama a la inicialización al cargar el módulo
+initialize_database()
+
+
+# --- Funciones para la tabla 'messages' ---
 
 def get_next_turno():
     conn = sqlite3.connect(DB_PATH)
@@ -33,17 +63,21 @@ def get_next_turno():
 
 def save_message(user_id, text):
     turno = get_next_turno()
+    categoria = categorizar(text)
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute('INSERT INTO messages (user_id, text, turno, estado) VALUES (?, ?, ?, ?)', (str(user_id), text, turno, 'pendiente'))
+    c.execute('INSERT INTO messages (user_id, text, turno, estado, categoria) VALUES (?, ?, ?, ?, ?)', (str(user_id), text, turno, 'pendiente', categoria))
     conn.commit()
     conn.close()
 
 
-def get_messages(user_id):
+def get_messages(user_id, include_archived=False):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute('SELECT id, text, turno, estado, timestamp FROM messages WHERE user_id = ? ORDER BY id', (str(user_id),))
+    if include_archived:
+        c.execute('SELECT id, text, turno, estado, timestamp, categoria FROM messages WHERE user_id = ? ORDER BY id', (str(user_id),))
+    else:
+        c.execute('SELECT id, text, turno, estado, timestamp, categoria FROM messages WHERE user_id = ? AND estado != "archivado" ORDER BY id', (str(user_id),))
     rows = c.fetchall()
     conn.close()
     return [
@@ -52,26 +86,31 @@ def get_messages(user_id):
             'text': row[1],
             'turno': row[2],
             'estado': row[3],
-            'timestamp': row[4]
+            'timestamp': row[4],
+            'categoria': row[5]
         }
         for row in rows
     ]
 
 
-def get_all_chats():
+def get_all_chats(include_archived=False):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute('SELECT user_id, id, text, turno, estado, timestamp FROM messages ORDER BY id')
+    if include_archived:
+        c.execute('SELECT user_id, id, text, turno, estado, timestamp, categoria FROM messages ORDER BY id')
+    else:
+        c.execute('SELECT user_id, id, text, turno, estado, timestamp, categoria FROM messages WHERE estado != "archivado" ORDER BY id')
     rows = c.fetchall()
     conn.close()
     chats = {}
-    for user_id, id_, text, turno, estado, timestamp in rows:
+    for user_id, id_, text, turno, estado, timestamp, categoria in rows:
         chats.setdefault(user_id, []).append({
             'id': id_,
             'text': text,
             'turno': turno,
             'estado': estado,
-            'timestamp': timestamp
+            'timestamp': timestamp,
+            'categoria': categoria
         })
     return chats
 
@@ -84,10 +123,44 @@ def marcar_atendido(user_id):
     conn.commit()
     conn.close()
 
-def eliminar_mensajes(user_id):
-    """Elimina todos los mensajes de un usuario."""
+def archivar_chat(user_id):
+    """Archiva todos los mensajes de un usuario."""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute('DELETE FROM messages WHERE user_id = ?', (str(user_id),))
+    c.execute('UPDATE messages SET estado = "archivado" WHERE user_id = ?', (str(user_id),))
+    conn.commit()
+    conn.close()
+
+# --- Funciones para la tabla 'respuestas' ---
+
+def save_respuesta(user_id_destino, texto_respuesta):
+    """Guarda una respuesta para ser enviada por el User_Bot."""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('INSERT INTO respuestas (user_id_destino, texto_respuesta, estado) VALUES (?, ?, ?)', (str(user_id_destino), texto_respuesta, 'pendiente'))
+    conn.commit()
+    conn.close()
+
+def get_pending_respuestas():
+    """Obtiene todas las respuestas pendientes de ser enviadas."""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('SELECT id, user_id_destino, texto_respuesta FROM respuestas WHERE estado = "pendiente"')
+    rows = c.fetchall()
+    conn.close()
+    return [
+        {
+            'id': row[0],
+            'user_id_destino': row[1],
+            'texto_respuesta': row[2]
+        }
+        for row in rows
+    ]
+
+def mark_respuesta_sent(respuesta_id):
+    """Marca una respuesta como enviada."""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('UPDATE respuestas SET estado = "enviado" WHERE id = ?', (respuesta_id,))
     conn.commit()
     conn.close()
