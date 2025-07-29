@@ -34,7 +34,8 @@ def initialize_database():
             estado TEXT NOT NULL DEFAULT 'pendiente', -- pendiente, atendido, seguimiento, archivado
             categoria TEXT,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-            last_status_change_timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            last_status_change_timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            postpone_until DATETIME
         )
     ''')
     # Tabla de respuestas del administrador
@@ -68,7 +69,7 @@ def save_message(user_id, text):
     categoria = categorizar(text)
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute('INSERT INTO messages (user_id, text, turno, estado, categoria, last_status_change_timestamp) VALUES (?, ?, ?, ?, ?, ?)', (str(user_id), text, turno, 'pendiente', categoria, datetime.datetime.now().isoformat()))
+    c.execute('INSERT INTO messages (user_id, text, turno, estado, categoria, last_status_change_timestamp, postpone_until) VALUES (?, ?, ?, ?, ?, ?, ?)', (str(user_id), text, turno, 'pendiente', categoria, datetime.datetime.now().isoformat(), None))
     conn.commit()
     conn.close()
 
@@ -77,9 +78,9 @@ def get_messages(user_id, include_archived=False):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     if include_archived:
-        c.execute('SELECT id, text, turno, estado, categoria, timestamp, last_status_change_timestamp FROM messages WHERE user_id = ? ORDER BY id', (str(user_id),))
+        c.execute('SELECT id, text, turno, estado, categoria, timestamp, last_status_change_timestamp, postpone_until FROM messages WHERE user_id = ? ORDER BY id', (str(user_id),))
     else:
-        c.execute('SELECT id, text, turno, estado, categoria, timestamp, last_status_change_timestamp FROM messages WHERE user_id = ? AND estado != "archivado" ORDER BY id', (str(user_id),))
+        c.execute('SELECT id, text, turno, estado, categoria, timestamp, last_status_change_timestamp, postpone_until FROM messages WHERE user_id = ? AND estado != "archivado" ORDER BY id', (str(user_id),))
     rows = c.fetchall()
     conn.close()
     return [
@@ -90,7 +91,8 @@ def get_messages(user_id, include_archived=False):
             'estado': row[3],
             'categoria': row[4],
             'timestamp': row[5],
-            'last_status_change_timestamp': row[6]
+            'last_status_change_timestamp': row[6],
+            'postpone_until': row[7]
         }
         for row in rows
     ]
@@ -99,7 +101,7 @@ def get_messages(user_id, include_archived=False):
 def get_all_chats(estado_filtro=None, include_archived=False):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    query = 'SELECT user_id, id, text, turno, estado, categoria, timestamp, last_status_change_timestamp FROM messages'
+    query = 'SELECT user_id, id, text, turno, estado, categoria, timestamp, last_status_change_timestamp, postpone_until FROM messages'
     conditions = []
     params = []
 
@@ -117,7 +119,7 @@ def get_all_chats(estado_filtro=None, include_archived=False):
     rows = c.fetchall()
     conn.close()
     chats = {}
-    for user_id, id_, text, turno, estado, categoria, timestamp, last_status_change_timestamp in rows:
+    for user_id, id_, text, turno, estado, categoria, timestamp, last_status_change_timestamp, postpone_until in rows:
         chats.setdefault(user_id, []).append({
             'id': id_,
             'text': text,
@@ -125,7 +127,8 @@ def get_all_chats(estado_filtro=None, include_archived=False):
             'estado': estado,
             'categoria': categoria,
             'timestamp': timestamp,
-            'last_status_change_timestamp': last_status_change_timestamp
+            'last_status_change_timestamp': last_status_change_timestamp,
+            'postpone_until': postpone_until
         })
     return chats
 
@@ -148,6 +151,15 @@ def marcar_seguimiento(user_id):
 def archivar_chat(user_id):
     """Archiva todos los mensajes de un usuario."""
     _update_chat_status(user_id, "archivado")
+
+def postpone_chat(user_id, hours):
+    """Posponer un chat por un número de horas."""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    postpone_time = (datetime.datetime.now() + datetime.timedelta(hours=hours)).isoformat()
+    c.execute('UPDATE messages SET postpone_until = ? WHERE user_id = ?', (postpone_time, str(user_id)))
+    conn.commit()
+    conn.close()
 
 def get_user_status(user_id):
     """Obtiene el estado más reciente de un usuario."""
@@ -239,4 +251,3 @@ def mark_respuesta_sent(respuesta_id):
     c.execute('UPDATE respuestas SET estado = "enviado" WHERE id = ?', (respuesta_id,))
     conn.commit()
     conn.close()
-
