@@ -150,19 +150,21 @@ async def ver_mensajes_callback(update: Update, context: ContextTypes.DEFAULT_TY
 
 async def gestion_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
     data = query.data
     user_id = data.split("_")[-1]
 
     if data.startswith("atendido_"):
         marcar_atendido(user_id)
+        await query.answer(f"Chat con {user_id} marcado como atendido.")
         await chats(update, context)
     elif data.startswith("seguimiento_"):
         marcar_seguimiento(user_id)
+        await query.answer(f"Chat con {user_id} marcado para seguimiento.")
         await chats(update, context)
     elif data.startswith("archivar_"):
         user_id = data.replace("archivar_", "")
         archivar_chat(user_id)
+        await query.answer(f"Chat con {user_id} archivado.")
         await chats(update, context)
     elif data.startswith("responder_"):
         context.user_data['responder_a'] = user_id
@@ -298,6 +300,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if hours <= 0:
                 raise ValueError("Las horas deben ser un número positivo.")
             postpone_chat(waiting_for_custom_hours_user_id, hours)
+            await update.message.reply_text(f"✅ Chat con {waiting_for_custom_hours_user_id} pospuesto por {hours} hora(s).")
+            context.user_data.pop('waiting_for_custom_hours', None)
             await chats(update, context)
         except ValueError:
             await update.message.reply_text("❌ Por favor, ingresa un número válido de horas.")
@@ -352,6 +356,28 @@ async def show_resumen_callback(update: Update, context: ContextTypes.DEFAULT_TY
     current_reply_markup = query.message.reply_markup
 
     await query.edit_message_text(msg, parse_mode="Markdown", reply_markup=current_reply_markup)
+
+async def show_postpone_options_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id):
+    query = update.callback_query
+    keyboard = [
+        [InlineKeyboardButton("1 hora", callback_data=f"posponer_fijo_1_{user_id}"),
+         InlineKeyboardButton("3 horas", callback_data=f"posponer_fijo_3_{user_id}")],
+        [InlineKeyboardButton("24 horas", callback_data=f"posponer_fijo_24_{user_id}"),
+         InlineKeyboardButton("Personalizado", callback_data=f"posponer_custom_{user_id}")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.edit_message_text(f"Selecciona por cuánto tiempo deseas posponer el chat de `{user_id}`:", reply_markup=reply_markup, parse_mode="Markdown")
+
+async def postpone_fixed_hours_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id, hours):
+    query = update.callback_query
+    postpone_chat(user_id, hours)
+    await query.answer(f"Chat con {user_id} pospuesto por {hours} hora(s).")
+    await chats(update, context)
+
+async def ask_custom_postpone_hours_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id):
+    query = update.callback_query
+    context.user_data['waiting_for_custom_hours'] = user_id
+    await query.edit_message_text(f"Por favor, ingresa el número de horas para posponer el chat de `{user_id}`:", parse_mode="Markdown")
 
 if __name__ == "__main__":
     app = ApplicationBuilder().token(TOKEN_BOTFATHER).build()

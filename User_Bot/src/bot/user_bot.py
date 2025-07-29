@@ -1,6 +1,7 @@
 import os
 import sys
 import asyncio
+import datetime
 from dotenv import load_dotenv
 from telethon import TelegramClient, events, Button
 import requests
@@ -105,11 +106,21 @@ async def loop_notificaciones():
             await asyncio.sleep(1800)
             continue
 
-        usuarios_pendientes = sorted([
-            (user_id, min(m['turno'] for m in mensajes if m['estado'] == 'pendiente'))
-            for user_id, mensajes in chats.items()
-            if any(m['estado'] == 'pendiente' for m in mensajes)
-        ], key=lambda x: x[1])
+        ahora = datetime.datetime.now()
+        usuarios_pendientes = []
+        for user_id, mensajes in chats.items():
+            if any(m['estado'] == 'pendiente' for m in mensajes):
+                ultimo_mensaje = max(mensajes, key=lambda m: datetime.datetime.fromisoformat(m['timestamp']))
+                postpone_until_str = ultimo_mensaje.get('postpone_until')
+                if postpone_until_str:
+                    postpone_until_dt = datetime.datetime.fromisoformat(postpone_until_str)
+                    if ahora < postpone_until_dt:
+                        continue  # El chat está pospuesto
+                
+                primer_turno = min(m['turno'] for m in mensajes if m['estado'] == 'pendiente')
+                usuarios_pendientes.append((user_id, primer_turno))
+
+        usuarios_pendientes.sort(key=lambda x: x[1])
 
         for i, (user_id, turno) in enumerate(usuarios_pendientes[:3]):
             if user_id not in notified_users:
