@@ -33,7 +33,7 @@ def enviar_al_botfather(mensaje):
 async def consultar_turno_action(event, user_id):
     position = get_user_position(user_id)
     if position:
-        await event.reply(f"Tu turno es el #{position}.")
+        await event.reply(f"Estás en la posición #{position} de la fila.")
     else:
         await event.reply("No tienes un turno pendiente en este momento.")
 
@@ -96,7 +96,7 @@ async def loop_notificaciones():
         for i, (user_id, turno) in enumerate(usuarios_pendientes[:3]):
             if user_id not in notified_users:
                 try:
-                    await client.send_message(int(user_id), f"¡Hola! Tu turno es el #{turno}. Estás en la posición {i + 1} de la fila.")
+                    await client.send_message(int(user_id), f"¡Hola! Estás en la posición {i + 1} de la fila.")
                     notified_users.add(user_id)
                     print(f"Notificación de turno enviada a {user_id}")
                 except Exception as e:
