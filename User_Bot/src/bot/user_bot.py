@@ -7,7 +7,7 @@ import requests
 import pathlib
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parent.parent.parent.parent))
-from shared_storage import save_message, get_pending_respuestas, mark_respuesta_sent, get_all_chats, get_user_status, get_user_position, cancel_turn
+from shared_storage import save_message, get_pending_respuestas, mark_respuesta_sent, get_all_chats, get_user_status, get_user_position, cancel_turn, get_admin_setting
 
 load_dotenv()
 
@@ -58,15 +58,27 @@ async def handler(event):
         [Button.inline("Cancelar mi Turno", data=b"cancelar_turno")]
     ]
 
+    vacation_mode_active = get_admin_setting('vacation_mode_active') == 'True'
+    vacation_message = get_admin_setting('vacation_mode_message')
+
+    response_text = ""
+
     if text == "turno":
         await consultar_turno_action(event, user_id)
+        return
     elif text == "cancelar":
         await cancelar_turno_action(event, user_id)
+        return
     elif user_status in ["pendiente", "seguimiento"]:
-        await event.reply("Puedes consultar o cancelar tu turno:", buttons=buttons)
+        response_text = "Puedes consultar o cancelar tu turno:"
     else:
         save_message(user_id, event.text)
-        await event.reply("¡Gracias por tu mensaje! Te responderé pronto. Puedes consultar tu turno escribiendo `turno` o cancelarlo escribiendo `cancelar`.", buttons=buttons)
+        response_text = "¡Gracias por tu mensaje! Te responderé pronto. Puedes consultar tu turno escribiendo `turno` o cancelarlo escribiendo `cancelar`."
+
+    if vacation_mode_active and vacation_message:
+        response_text += f"\n\n*Mensaje del Administrador:* {vacation_message}"
+
+    await event.reply(response_text, buttons=buttons)
 
 @client.on(events.CallbackQuery(data=b"consultar_turno"))
 async def consultar_turno_callback(event):
@@ -82,6 +94,12 @@ async def cancelar_turno_callback(event):
 
 async def loop_notificaciones():
     while True:
+        vacation_mode_active = get_admin_setting('vacation_mode_active') == 'True'
+        if vacation_mode_active:
+            print("Modo descanso activo en User_Bot. Notificaciones de turno deshabilitadas.")
+            await asyncio.sleep(1800) # Esperar 30 minutos antes de volver a chequear
+            continue
+
         chats = get_all_chats()
         if not chats:
             await asyncio.sleep(1800)

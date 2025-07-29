@@ -47,6 +47,12 @@ def initialize_database():
             estado TEXT NOT NULL DEFAULT 'pendiente' -- pendiente, enviado
         )
     ''')
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS admin_settings (
+            setting_name TEXT PRIMARY KEY,
+            setting_value TEXT
+        )
+    ''')
     conn.commit()
     conn.close()
 
@@ -270,3 +276,22 @@ def mark_respuesta_sent(respuesta_id):
     c.execute('UPDATE respuestas SET estado = "enviado" WHERE id = ?', (respuesta_id,))
     conn.commit()
     conn.close()
+
+# --- Funciones para la tabla 'admin_settings' ---
+
+def save_admin_setting(setting_name, setting_value):
+    """Guarda o actualiza una configuración del administrador."""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('INSERT OR REPLACE INTO admin_settings (setting_name, setting_value) VALUES (?, ?)', (setting_name, str(setting_value)))
+    conn.commit()
+    conn.close()
+
+def get_admin_setting(setting_name):
+    """Obtiene una configuración del administrador."""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('SELECT setting_value FROM admin_settings WHERE setting_name = ?', (setting_name,))
+    result = c.fetchone()
+    conn.close()
+    return result[0] if result else None
