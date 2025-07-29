@@ -218,6 +218,25 @@ def get_pending_chats_count():
     conn.close()
     return result[0] if result else 0
 
+def get_current_queue_positions():
+    """Devuelve un diccionario con user_id: posicion_en_cola para chats pendientes."""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('''
+        SELECT user_id, MIN(turno) as primer_turno
+        FROM messages
+        WHERE estado = "pendiente"
+        GROUP BY user_id
+        ORDER BY primer_turno ASC
+    ''')
+    usuarios_pendientes = c.fetchall()
+    conn.close()
+    
+    positions = {}
+    for i, (user_id, _) in enumerate(usuarios_pendientes):
+        positions[user_id] = i + 1
+    return positions
+
 # --- Funciones para la tabla 'respuestas' ---
 
 def save_respuesta(user_id_destino, texto_respuesta):

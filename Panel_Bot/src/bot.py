@@ -7,7 +7,7 @@ import sys
 import pathlib
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parent.parent.parent))
-from shared_storage import get_all_chats, get_messages, marcar_atendido, marcar_seguimiento, archivar_chat, save_respuesta, get_summary_by_status, get_daily_attended_chats_count, get_pending_chats_count, postpone_chat
+from shared_storage import get_all_chats, get_messages, marcar_atendido, marcar_seguimiento, archivar_chat, save_respuesta, get_summary_by_status, get_daily_attended_chats_count, get_pending_chats_count, postpone_chat, get_current_queue_positions
 
 load_dotenv()
 
@@ -81,16 +81,19 @@ async def chats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = "" # Inicializar msg aquí, se construirá condicionalmente
     keyboard = []
 
+    # Obtener las posiciones actuales en la cola
+    queue_positions = get_current_queue_positions()
+
     if not chats:
         msg = f"*No hay chats registrados con estado '{current_filter}'.*\n\n" + _build_summary_message() # Mostrar mensaje específico y luego resumen
     else:
         msg = f"*Chats registrados (Filtrado por: {current_filter.capitalize()})*: \n"
         for user_id, mensajes in chats.items():
-            turnos = [m['turno'] for m in mensajes if m['estado'] == 'pendiente']
+            # Obtener la posición actual en la cola, si el chat está pendiente
+            current_position = queue_positions.get(user_id, '-')
             estado = mensajes[-1].get('estado', 'desconocido') # Obtener el estado del último mensaje
-            turno = min(turnos) if turnos else '-'
             categoria = mensajes[-1].get('categoria', 'otros')
-            msg += f"\nUsuario `{user_id}`: {len(mensajes)} mensajes | Turno: {turno} | Estado: {estado} | Cat: {categoria}"
+            msg += f"\nUsuario `{user_id}`: {len(mensajes)} mensajes | Posición: {current_position} | Estado: {estado} | Cat: {categoria}"
             keyboard.append([InlineKeyboardButton(f"Ver mensajes de {user_id}", callback_data=f"ver_{user_id}")])
     
     # Botones de filtro (siempre se muestran)
