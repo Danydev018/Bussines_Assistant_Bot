@@ -75,17 +75,7 @@ async def chats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = []
     queue_positions = get_current_queue_positions()
 
-    if not chats:
-        msg = f"*No hay chats registrados con estado '{current_filter}'.*\n\n" + _build_summary_message()
-    else:
-        msg = f"*Chats registrados (Filtrado por: {current_filter.capitalize()})*: \n"
-        for user_id, mensajes in chats.items():
-            current_position = queue_positions.get(user_id, '-')
-            estado = mensajes[-1].get('estado', 'desconocido')
-            categoria = mensajes[-1].get('categoria', 'otros')
-            msg += f"\nUsuario `{user_id}`: {len(mensajes)} mensajes | Posición: {current_position} | Estado: {estado} | Cat: {categoria}"
-            keyboard.append([InlineKeyboardButton(f"Ver mensajes de {user_id}", callback_data=f"ver_{user_id}")])
-    
+    # Primero los botones de filtro y resumen
     filter_buttons_row1 = [
         InlineKeyboardButton("Pendientes", callback_data="filter_pendiente"),
         InlineKeyboardButton("En Seguimiento", callback_data="filter_seguimiento")
@@ -101,6 +91,18 @@ async def chats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard.append(filter_buttons_row1)
     keyboard.append(filter_buttons_row2)
     keyboard.append(summary_button_row)
+
+    # Después de la última fila, listamos los chats
+    if not chats:
+        msg = f"*No hay chats registrados con estado '{current_filter}'.*\n\n" + _build_summary_message()
+    else:
+        msg = f"*Chats registrados (Filtrado por: {current_filter.capitalize()})*: \n"
+        for user_id, mensajes in chats.items():
+            current_position = queue_positions.get(user_id, '-')
+            estado = mensajes[-1].get('estado', 'desconocido')
+            categoria = mensajes[-1].get('categoria', 'otros')
+            msg += f"\nUsuario `{user_id}`: {len(mensajes)} mensajes | Posición: {current_position} | Estado: {estado} | Cat: {categoria}"
+            keyboard.append([InlineKeyboardButton(f"Ver mensajes de {user_id}", callback_data=f"ver_{user_id}")])
 
     reply_markup = InlineKeyboardMarkup(keyboard)
     new_msg = msg
@@ -143,6 +145,9 @@ async def ver_mensajes_callback(update: Update, context: ContextTypes.DEFAULT_TY
         ],
         [
             InlineKeyboardButton("⏰ Posponer", callback_data=f"posponer_opciones_{user_id}")
+        ],
+        [
+            InlineKeyboardButton("🔙 Volver", callback_data="volver_panel")
         ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
