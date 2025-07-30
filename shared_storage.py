@@ -1,3 +1,43 @@
+# --- Funciones para recomendaciones de contacto ---
+def save_contact_recommendation(user_id, nombre, telefono):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS contact_recommendations (
+            user_id TEXT PRIMARY KEY,
+            nombre TEXT NOT NULL,
+            telefono TEXT NOT NULL,
+            enviado INTEGER DEFAULT 0
+        )
+    ''')
+    c.execute('INSERT OR REPLACE INTO contact_recommendations (user_id, nombre, telefono, enviado) VALUES (?, ?, ?, 0)', (str(user_id), nombre, telefono))
+    conn.commit()
+    conn.close()
+
+def get_contact_recommendation(user_id):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS contact_recommendations (
+            user_id TEXT PRIMARY KEY,
+            nombre TEXT NOT NULL,
+            telefono TEXT NOT NULL,
+            enviado INTEGER DEFAULT 0
+        )
+    ''')
+    c.execute('SELECT nombre, telefono FROM contact_recommendations WHERE user_id=? AND enviado=0', (str(user_id),))
+    row = c.fetchone()
+    conn.close()
+    if row:
+        return {'nombre': row[0], 'telefono': row[1]}
+    return None
+
+def mark_contact_recommendation_sent(user_id):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('UPDATE contact_recommendations SET enviado=1 WHERE user_id=?', (str(user_id),))
+    conn.commit()
+    conn.close()
 import sqlite3
 import pathlib
 import datetime

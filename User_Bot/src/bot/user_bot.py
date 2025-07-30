@@ -8,7 +8,7 @@ import requests
 import pathlib
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parent.parent.parent.parent))
-from shared_storage import save_message, get_pending_respuestas, mark_respuesta_sent, get_all_chats, get_user_status, get_user_position, cancel_turn, get_admin_setting
+from shared_storage import save_message, get_pending_respuestas, mark_respuesta_sent, get_all_chats, get_user_status, get_user_position, cancel_turn, get_admin_setting, get_contact_recommendation, mark_contact_recommendation_sent
 
 load_dotenv()
 
@@ -44,15 +44,34 @@ async def cancelar_turno_action(event, user_id):
 
 @client.on(events.NewMessage(incoming=True))
 async def handler(event):
+
+    print(f"[DEBUG User_Bot] Nuevo mensaje recibido. event.is_private={event.is_private}")
     if not event.is_private:
+        print("[DEBUG User_Bot] Mensaje ignorado: no es privado.")
         return
     sender = await event.get_sender()
     if sender.is_self or getattr(sender, 'bot', False):
+        print("[DEBUG User_Bot] Mensaje ignorado: es de self o bot.")
         return
 
     user_id = str(sender.id)
     user_status = get_user_status(user_id)
     text = event.text.lower().strip()
+
+    # --- Enviar recomendación de contacto si existe ---
+    rec = get_contact_recommendation(user_id)
+    print(f"[DEBUG User_Bot] Buscando recomendación para user_id={user_id}. Resultado: {rec}")
+    if rec:
+        try:
+            print(f"[DEBUG User_Bot] Enviando recomendación a {user_id}: nombre={rec['nombre']}, telefono={rec['telefono']}")
+            await event.reply(
+                f"🤝 Te recomendamos contactar a:\n<b>{rec['nombre']}</b>\n📞 <code>{rec['telefono']}</code>",
+                parse_mode="HTML"
+            )
+            mark_contact_recommendation_sent(user_id)
+            print(f"[DEBUG User_Bot] Recomendación marcada como enviada para {user_id}")
+        except Exception as e:
+            print(f"[DEBUG User_Bot] Error al enviar recomendación de contacto a {user_id}: {e}")
 
     buttons = [
         [Button.inline("Consultar mi Turno", data=b"consultar_turno")],
@@ -142,7 +161,11 @@ async def loop_respuestas():
         respuestas = get_pending_respuestas()
         for respuesta in respuestas:
             try:
-                await client.send_message(int(respuesta['user_id_destino']), respuesta['texto_respuesta'])
+                await client.send_message(
+                    int(respuesta['user_id_destino']),
+                    respuesta['texto_respuesta'],
+                    parse_mode='HTML'
+                )
                 mark_respuesta_sent(respuesta['id'])
                 print(f"Respuesta enviada a {respuesta['user_id_destino']}")
             except Exception as e:

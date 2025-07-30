@@ -1,5 +1,6 @@
 import os
 import datetime
+import json
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from dotenv import load_dotenv
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler
@@ -7,7 +8,102 @@ import sys
 import pathlib
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parent.parent.parent))
-from shared_storage import get_all_chats, get_messages, marcar_atendido, marcar_seguimiento, archivar_chat, save_respuesta, get_summary_by_status, get_daily_attended_chats_count, get_pending_chats_count, postpone_chat, get_current_queue_positions, get_admin_setting, save_admin_setting
+from shared_storage import get_all_chats, get_messages, marcar_atendido, marcar_seguimiento, archivar_chat, save_respuesta, get_summary_by_status, get_daily_attended_chats_count, get_pending_chats_count, postpone_chat, get_current_queue_positions, get_admin_setting, save_admin_setting, save_contact_recommendation
+
+# --- Contactos recomendados ---
+CONTACTS_FILE = os.path.join(os.path.dirname(__file__), 'contactos_recomendados.json')
+
+def load_contacts():
+    if not os.path.exists(CONTACTS_FILE):
+        return []
+    with open(CONTACTS_FILE, 'r', encoding='utf-8') as f:
+        try:
+            return json.load(f)
+        except Exception:
+            return []
+
+def save_contacts(contacts):
+    with open(CONTACTS_FILE, 'w', encoding='utf-8') as f:
+        json.dump(contacts, f, ensure_ascii=False, indent=2)
+
+async def add_contact_start(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id):
+    context.user_data['adding_contact_for'] = user_id
+    await update.callback_query.edit_message_text(
+        "Por favor, ingresa el nombre del contacto recomendado:")
+
+async def handle_add_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Paso 1: nombre
+    if 'adding_contact_for' in context.user_data and 'adding_contact_name' not in context.user_data:
+        context.user_data['adding_contact_name'] = update.message.text.strip()
+        await update.message.reply_text("Ahora ingresa el número de teléfono del contacto (solo dígitos, sin espacios ni guiones):")
+        return True
+    # Paso 2: teléfono
+    elif 'adding_contact_for' in context.user_data and 'adding_contact_name' in context.user_data:
+        nombre = context.user_data['adding_contact_name']
+        telefono = update.message.text.strip()
+        if not telefono.isdigit():
+            await update.message.reply_text("El número debe contener solo dígitos. Intenta de nuevo:")
+            return True
+        contacts = load_contacts()
+        contacts.append({'nombre': nombre, 'telefono': telefono})
+        save_contacts(contacts)
+        user_id = context.user_data['adding_contact_for']
+        await update.message.reply_text(f"Contacto guardado: {nombre} ({telefono})\n¿Quieres compartirlo ahora?", reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ Compartir", callback_data=f"compartir_contacto_{len(contacts)-1}_{user_id}"),
+             InlineKeyboardButton("❌ Cancelar", callback_data=f"ver_{user_id}")]
+        ]))
+        context.user_data.pop('adding_contact_for', None)
+        context.user_data.pop('adding_contact_name', None)
+        return True
+    return False
+
+async def compartir_contacto_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+    # data: compartir_contacto_{idx}_{user_id}
+    parts = data.split('_')
+    idx = int(parts[2])
+    user_id = parts[3]
+    contacts = load_contacts()
+    if idx < 0 or idx >= len(contacts):
+        await query.edit_message_text("❌ Contacto no encontrado.")
+        return
+    contacto = contacts[idx]
+    nombre = contacto['nombre']
+    telefono = contacto['telefono']
+    print(f"[DEBUG Panel_Bot] Guardando recomendación para user_id={user_id}, nombre={nombre}, telefono={telefono}")
+    # Guardar la recomendación como un mensaje pendiente, igual que la funcionalidad de Responder
+    try:
+        mensaje = f"🤝 Te recomendamos contactar a: <b>{nombre}</b>\n📞 <code>{telefono}</code>"
+        # Usar la misma función que Responder para que el User_Bot lo procese igual
+        save_respuesta(user_id, mensaje)
+        print(f"[DEBUG Panel_Bot] Recomendación guardada como mensaje pendiente para user_id={user_id}")
+        await query.edit_message_text(f"✅ Contacto recomendado guardado para el usuario {user_id}. Será enviado por el User_Bot.")
+    except Exception as e:
+        print(f"[DEBUG Panel_Bot] Error al guardar la recomendación: {e}")
+        await query.edit_message_text(f"❌ Error al guardar la recomendación: {e}")
+
+async def recomendar_contacto_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user_id = query.data.replace("recomendar_contacto_", "")
+    contacts = load_contacts()
+    keyboard = []
+    for idx, c in enumerate(contacts):
+        keyboard.append([InlineKeyboardButton(f"{c['nombre']} ({c['telefono']})", callback_data=f"compartir_contacto_{idx}_{user_id}")])
+    keyboard.append([InlineKeyboardButton("➕ Nuevo contacto", callback_data=f"nuevo_contacto_{user_id}")])
+    keyboard.append([InlineKeyboardButton("🔙 Volver", callback_data=f"ver_{user_id}")])
+    await query.edit_message_text(
+        "Selecciona un contacto para recomendar o agrega uno nuevo:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+async def nuevo_contacto_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user_id = query.data.replace("nuevo_contacto_", "")
+    await add_contact_start(update, context, user_id)
 
 load_dotenv()
 
@@ -163,7 +259,8 @@ async def ver_mensajes_callback(update: Update, context: ContextTypes.DEFAULT_TY
             InlineKeyboardButton("✉️ Responder", callback_data=f"responder_{user_id}")
         ],
         [
-            InlineKeyboardButton("⏰ Posponer", callback_data=f"posponer_opciones_{user_id}")
+            InlineKeyboardButton("⏰ Posponer", callback_data=f"posponer_opciones_{user_id}"),
+            InlineKeyboardButton("📇 Recomendar contacto", callback_data=f"recomendar_contacto_{user_id}")
         ],
         [
             InlineKeyboardButton("🔙 Volver al panel", callback_data="volver_panel")
@@ -299,6 +396,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     vacation_duration = context.user_data.get('vacation_duration')
     waiting_for_custom_hours_user_id = context.user_data.get('waiting_for_custom_hours')
 
+    # --- Añadir contacto recomendado ---
+    handled = await handle_add_contact(update, context)
+    if handled:
+        return
+
     if redefining_duration:
         try:
             duration = int(text)
@@ -419,5 +521,9 @@ if __name__ == "__main__":
     app.add_handler(CallbackQueryHandler(ask_new_vacation_duration, pattern=r"^redefinir_horas$"))
     app.add_handler(CallbackQueryHandler(ask_new_vacation_message, pattern=r"^redefinir_mensaje$"))
     app.add_handler(CallbackQueryHandler(chats, pattern=r"^volver_panel$"))
+    # Contactos recomendados
+    app.add_handler(CallbackQueryHandler(recomendar_contacto_callback, pattern=r"^recomendar_contacto_.*$"))
+    app.add_handler(CallbackQueryHandler(compartir_contacto_callback, pattern=r"^compartir_contacto_.*$"))
+    app.add_handler(CallbackQueryHandler(nuevo_contacto_callback, pattern=r"^nuevo_contacto_.*$"))
 
     app.run_polling(allowed_updates=Update.ALL_TYPES)
