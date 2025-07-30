@@ -1,3 +1,7 @@
+### 3. Obtener tu ADMIN_ID 👤
+1. Abre Telegram y busca el bot `@userinfobot` o `@getmyid_bot`.
+2. Inicia una conversación y escribe cualquier mensaje.
+3. El bot te responderá con tu **ID de usuario**. Usa ese número como `ADMIN_ID` en el archivo `.env`.
 
 # 🤖 Asistente de Negocios con Telegram
 
@@ -17,7 +21,24 @@ Ambos bots se comunican de forma indirecta mediante una base de datos SQLite com
 
 
 
-## 🚀 Instalación y prueba en otra computadora
+
+## �️ Obtención de credenciales necesarias
+
+Antes de instalar el asistente, necesitas crear tu bot en Telegram y obtener las credenciales de la API:
+
+### 1. Crear un bot con BotFather 🤖
+1. Abre Telegram y busca el usuario `@BotFather`.
+2. Inicia una conversación y ejecuta el comando `/newbot`.
+3. Sigue las instrucciones para asignar un nombre y un usuario único a tu bot.
+4. Al finalizar, BotFather te dará un **Token**. Guárdalo, lo necesitarás como `TOKEN_BOTFATHER`.
+
+### 2. Obtener API_ID y API_HASH de Telegram 🔑
+1. Ve a [my.telegram.org](https://my.telegram.org) e inicia sesión con tu número de teléfono de Telegram.
+2. Haz clic en "API development tools".
+3. Completa el formulario para crear una nueva aplicación (puedes poner cualquier nombre y URL).
+4. Al finalizar, se mostrarán tu **API_ID** y **API_HASH**. Guárdalos para el archivo `.env`.
+
+---
 
 Sigue estos pasos profesionales para instalar y poner en marcha el asistente en un entorno nuevo:
 
