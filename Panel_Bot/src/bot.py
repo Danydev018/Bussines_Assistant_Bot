@@ -80,6 +80,8 @@ async def compartir_contacto_callback(update: Update, context: ContextTypes.DEFA
         save_respuesta(user_id, mensaje)
         print(f"[DEBUG Panel_Bot] Recomendación guardada como mensaje pendiente para user_id={user_id}")
         await query.edit_message_text(f"✅ Contacto recomendado guardado para el usuario {user_id}. Será enviado por el User_Bot.")
+        # Volver al panel del chat atendido después del feedback, llamando directamente con user_id
+        await ver_mensajes_callback(update, context, user_id_override=user_id)
     except Exception as e:
         print(f"[DEBUG Panel_Bot] Error al guardar la recomendación: {e}")
         await query.edit_message_text(f"❌ Error al guardar la recomendación: {e}")
@@ -91,13 +93,32 @@ async def recomendar_contacto_callback(update: Update, context: ContextTypes.DEF
     contacts = load_contacts()
     keyboard = []
     for idx, c in enumerate(contacts):
-        keyboard.append([InlineKeyboardButton(f"{c['nombre']} ({c['telefono']})", callback_data=f"compartir_contacto_{idx}_{user_id}")])
+        keyboard.append([
+            InlineKeyboardButton(f"{c['nombre']} ({c['telefono']})", callback_data=f"compartir_contacto_{idx}_{user_id}"),
+            InlineKeyboardButton("🗑️ Eliminar", callback_data=f"eliminar_contacto_{idx}_{user_id}")
+        ])
     keyboard.append([InlineKeyboardButton("➕ Nuevo contacto", callback_data=f"nuevo_contacto_{user_id}")])
     keyboard.append([InlineKeyboardButton("🔙 Volver", callback_data=f"ver_{user_id}")])
     await query.edit_message_text(
-        "Selecciona un contacto para recomendar o agrega uno nuevo:",
+        "Selecciona un contacto para recomendar, eliminar o agrega uno nuevo:",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
+async def eliminar_contacto_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+    # data: eliminar_contacto_{idx}_{user_id}
+    parts = data.split('_')
+    idx = int(parts[2])
+    user_id = parts[3]
+    contacts = load_contacts()
+    if idx < 0 or idx >= len(contacts):
+        await query.edit_message_text("❌ Contacto no encontrado.")
+        return
+    contacto = contacts.pop(idx)
+    save_contacts(contacts)
+    # Volver a mostrar la lista de contactos inmediatamente después de eliminar
+    await recomendar_contacto_callback(update, context)
 
 async def nuevo_contacto_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -227,10 +248,13 @@ async def chats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif not update.callback_query:
         await message_to_edit.reply_text(new_msg, parse_mode="HTML", reply_markup=new_reply_markup)
 
-async def ver_mensajes_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def ver_mensajes_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id_override=None):
     query = update.callback_query
     await query.answer()
-    user_id = query.data.replace("ver_", "")
+    if user_id_override is not None:
+        user_id = user_id_override
+    else:
+        user_id = query.data.replace("ver_", "")
     mensajes = get_messages(user_id, include_archived=True)
     if not mensajes:
         await query.edit_message_text(f"No hay mensajes para el usuario {user_id}.")
@@ -525,5 +549,6 @@ if __name__ == "__main__":
     app.add_handler(CallbackQueryHandler(recomendar_contacto_callback, pattern=r"^recomendar_contacto_.*$"))
     app.add_handler(CallbackQueryHandler(compartir_contacto_callback, pattern=r"^compartir_contacto_.*$"))
     app.add_handler(CallbackQueryHandler(nuevo_contacto_callback, pattern=r"^nuevo_contacto_.*$"))
+    app.add_handler(CallbackQueryHandler(eliminar_contacto_callback, pattern=r"^eliminar_contacto_.*$"))
 
     app.run_polling(allowed_updates=Update.ALL_TYPES)

@@ -1,18 +1,10 @@
 [
   {
-    "nombre": "marian",
-    "telefono": "04120425755"
-  },
-  {
-    "nombre": "Miguel",
-    "telefono": "04125436728"
-  },
-  {
-    "nombre": "Juan",
-    "telefono": "04125436728"
-  },
-  {
     "nombre": "Pedro",
     "telefono": "02481838182"
+  },
+  {
+    "nombre": "Marian Bolivar",
+    "telefono": "04120425755"
   }
 ]
