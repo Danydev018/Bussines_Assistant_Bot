@@ -206,6 +206,10 @@ async def chats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         InlineKeyboardButton("📊 Resumen", callback_data="show_resumen"),
         InlineKeyboardButton("🏖️ Descanso", callback_data="modo_descanso_toggle")
     ])
+    # Botón para mensaje masivo a pendientes
+    keyboard.append([
+        InlineKeyboardButton("📢 Mensaje a todos los pendientes", callback_data="mensaje_masivo_pendientes")
+    ])
 
     # Chats listados con formato profesional
     if not chats:
@@ -297,6 +301,10 @@ async def ver_mensajes_callback(update: Update, context: ContextTypes.DEFAULT_TY
 
 async def gestion_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    if query.data == "mensaje_masivo_pendientes":
+        context.user_data['enviando_masivo_pendientes'] = True
+        await query.edit_message_text("Escribe el mensaje que deseas enviar a todos los chats pendientes:")
+        return
     data = query.data
     user_id = data.split("_")[-1]
 
@@ -416,6 +424,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = update.message.text
     responder_a = context.user_data.get('responder_a')
+    enviando_masivo_pendientes = context.user_data.get('enviando_masivo_pendientes')
     redefining_duration = context.user_data.get('redefining_vacation_duration')
     redefining_message = context.user_data.get('redefining_vacation_message')
     setting_vacation_mode = context.user_data.get('setting_vacation_mode')
@@ -425,6 +434,27 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # --- Añadir contacto recomendado ---
     handled = await handle_add_contact(update, context)
     if handled:
+        return
+
+    # --- Mensaje masivo a pendientes ---
+    if enviando_masivo_pendientes:
+        texto = update.message.text.strip()
+        chats_pendientes = get_all_chats(estado_filtro='pendiente')
+        enviados = 0
+        errores = []
+        for user_id in chats_pendientes.keys():
+            try:
+                save_respuesta(user_id, texto)
+                enviados += 1
+            except Exception as e:
+                errores.append(str(user_id))
+                print(f"[DEBUG Panel_Bot] Error enviando masivo a {user_id}: {e}")
+        context.user_data.pop('enviando_masivo_pendientes', None)
+        if enviados > 0:
+            await update.message.reply_text(f"✅ Mensaje enviado a {enviados} chats pendientes.")
+        if errores:
+            await update.message.reply_text(f"❌ No se pudo enviar a los siguientes usuarios: {', '.join(errores)}")
+        await chats(update, context)
         return
 
     if redefining_duration:
@@ -539,6 +569,7 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("resumen", resumen_chats))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(CallbackQueryHandler(ver_mensajes_callback, pattern=r"^ver_.*?$"))
+    app.add_handler(CallbackQueryHandler(gestion_callback, pattern=r"^mensaje_masivo_pendientes$"))
     app.add_handler(CallbackQueryHandler(gestion_callback, pattern=r"^(atendido_|seguimiento_|archivar_|responder_|posponer_opciones_|posponer_fijo_|posponer_custom_).*?$"))
     app.add_handler(CallbackQueryHandler(filter_chats_callback, pattern=r"^filter_.*?$"))
     app.add_handler(CallbackQueryHandler(show_resumen_callback, pattern=r"^show_resumen$"))
