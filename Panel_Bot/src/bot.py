@@ -226,8 +226,10 @@ async def chats(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"⏳ Posición: <b>{current_position}</b>\n"
                 + "─"*12 + "\n"
             )
+            # Mostrar la posición en la cola debajo del texto del botón
+            pos_str = f"Posición: {current_position}" if current_position != '-' else "Sin posición"
             keyboard.append([
-                InlineKeyboardButton(f"💬 Ver mensajes", callback_data=f"ver_{user_id}")
+                InlineKeyboardButton(f"💬 Ver mensajes\n{pos_str}", callback_data=f"ver_{user_id}")
             ])
 
     reply_markup = InlineKeyboardMarkup(keyboard)
