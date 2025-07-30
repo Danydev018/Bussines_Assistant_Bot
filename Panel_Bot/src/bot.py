@@ -50,13 +50,13 @@ def _build_summary_message():
     daily_attended = get_daily_attended_chats_count()
     pending_count = get_pending_chats_count()
 
-    msg = "*Resumen de Chats:*\n\n"
-    msg += "*Por Estado:*\n"
+    msg = "<b>📊 Resumen de Chats</b>\n\n"
+    msg += "<b>Por Estado:</b>\n"
     for status, count in summary_by_status.items():
-        msg += f"- {status.capitalize()}: {count} chats\n"
+        msg += f"• <b>{status.capitalize()}</b>: {count} chats\n"
 
-    msg += f"\n*Atendidos Hoy:* {daily_attended} chats\n"
-    msg += f"*Pendientes en Cola:* {pending_count} chats\n"
+    msg += f"\n<b>Atendidos Hoy:</b> {daily_attended} chats\n"
+    msg += f"<b>Pendientes en Cola:</b> {pending_count} chats\n"
     return msg
 
 async def chats(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -75,34 +75,43 @@ async def chats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = []
     queue_positions = get_current_queue_positions()
 
-    # Primero los botones de filtro y resumen
-    filter_buttons_row1 = [
-        InlineKeyboardButton("Pendientes", callback_data="filter_pendiente"),
-        InlineKeyboardButton("En Seguimiento", callback_data="filter_seguimiento")
-    ]
-    filter_buttons_row2 = [
-        InlineKeyboardButton("Atendidos", callback_data="filter_atendido"),
-        InlineKeyboardButton("Archivados", callback_data="filter_archivado")
-    ]
-    summary_button_row = [
-        InlineKeyboardButton("Resumen", callback_data="show_resumen"),
-        InlineKeyboardButton("🏖️ Modo Descanso", callback_data="modo_descanso_toggle")
-    ]
-    keyboard.append(filter_buttons_row1)
-    keyboard.append(filter_buttons_row2)
-    keyboard.append(summary_button_row)
 
-    # Después de la última fila, listamos los chats
+    # Botones de filtro y resumen con emojis y mejor agrupados
+    filter_buttons = [
+        InlineKeyboardButton("🟢 Pendientes", callback_data="filter_pendiente"),
+        InlineKeyboardButton("🟡 Seguimiento", callback_data="filter_seguimiento"),
+        InlineKeyboardButton("🔵 Atendidos", callback_data="filter_atendido"),
+        InlineKeyboardButton("🗄️ Archivados", callback_data="filter_archivado")
+    ]
+    keyboard.append(filter_buttons[:2])
+    keyboard.append(filter_buttons[2:])
+    keyboard.append([
+        InlineKeyboardButton("📊 Resumen", callback_data="show_resumen"),
+        InlineKeyboardButton("🏖️ Descanso", callback_data="modo_descanso_toggle")
+    ])
+
+    # Chats listados con formato profesional
     if not chats:
-        msg = f"*No hay chats registrados con estado '{current_filter}'.*\n\n" + _build_summary_message()
+        msg = f"❌ <b>No hay chats registrados con estado</b> <code>{current_filter}</code>\n\n" + _build_summary_message()
     else:
-        msg = f"*Chats registrados (Filtrado por: {current_filter.capitalize()})*: \n"
+        msg = f"<b>👥 Chats registrados</b> <i>(Filtrado por: {current_filter.capitalize()})</i>\n" + "─"*12 + "\n"
         for user_id, mensajes in chats.items():
+            last = mensajes[-1]
+            estado = last.get('estado', 'desconocido').capitalize()
+            categoria = last.get('categoria', 'otros').capitalize()
             current_position = queue_positions.get(user_id, '-')
-            estado = mensajes[-1].get('estado', 'desconocido')
-            categoria = mensajes[-1].get('categoria', 'otros')
-            msg += f"\nUsuario `{user_id}`: {len(mensajes)} mensajes | Posición: {current_position} | Estado: {estado} | Cat: {categoria}"
-            keyboard.append([InlineKeyboardButton(f"Ver mensajes de {user_id}", callback_data=f"ver_{user_id}")])
+            nombre = last.get('nombre', '')
+            nombre_str = f"<b>{nombre}</b>\n" if nombre else ""
+            msg += (
+                f"👤 {nombre_str}<code>{user_id}</code>\n"
+                f"📨 <b>{len(mensajes)}</b> mensajes\n"
+                f"🏷️ {categoria}   📌 <b>{estado}</b>\n"
+                f"⏳ Posición: <b>{current_position}</b>\n"
+                + "─"*12 + "\n"
+            )
+            keyboard.append([
+                InlineKeyboardButton(f"💬 Ver mensajes", callback_data=f"ver_{user_id}")
+            ])
 
     reply_markup = InlineKeyboardMarkup(keyboard)
     new_msg = msg
@@ -116,11 +125,11 @@ async def chats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if (current_message_text != new_msg or str(current_reply_markup) != str(new_reply_markup)):
         if update.callback_query:
-            await message_to_edit.edit_text(new_msg, parse_mode="Markdown", reply_markup=new_reply_markup)
+            await message_to_edit.edit_text(new_msg, parse_mode="HTML", reply_markup=new_reply_markup)
         else:
-            await message_to_edit.reply_text(new_msg, parse_mode="Markdown", reply_markup=new_reply_markup)
+            await message_to_edit.reply_text(new_msg, parse_mode="HTML", reply_markup=new_reply_markup)
     elif not update.callback_query:
-        await message_to_edit.reply_text(new_msg, parse_mode="Markdown", reply_markup=new_reply_markup)
+        await message_to_edit.reply_text(new_msg, parse_mode="HTML", reply_markup=new_reply_markup)
 
 async def ver_mensajes_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -131,27 +140,37 @@ async def ver_mensajes_callback(update: Update, context: ContextTypes.DEFAULT_TY
         await query.edit_message_text(f"No hay mensajes para el usuario {user_id}.")
         return
 
-    msg = f"*Mensajes de {user_id}:*\n\n"
+    msg = f"<b>📨 Mensajes de</b> <code>{user_id}</code>\n" + "─"*12 + "\n"
     for m in mensajes:
-        msg += (f"- [{m['timestamp']}] Turno: {m['turno']} | Estado: {m['estado']}\n  {m['text']}\n")
+        fecha = m.get('timestamp', '')
+        turno = m.get('turno', '')
+        estado = m.get('estado', '').capitalize()
+        texto = m.get('text', '')
+        msg += (
+            f"🕒 <i>{fecha}</i>\n"
+            f"🔖 Turno: <b>{turno}</b>\n"
+            f"📌 Estado: <b>{estado}</b>\n"
+            f"<pre>{texto}</pre>\n"
+            + "─"*12 + "\n"
+        )
     keyboard = [
         [
-            InlineKeyboardButton("✅ Marcar como atendido", callback_data=f"atendido_{user_id}"),
-            InlineKeyboardButton("🔄 En Seguimiento", callback_data=f"seguimiento_{user_id}")
+            InlineKeyboardButton("✅ Atendido", callback_data=f"atendido_{user_id}"),
+            InlineKeyboardButton("🔄 Seguimiento", callback_data=f"seguimiento_{user_id}")
         ],
         [
-            InlineKeyboardButton("🗄️ Archivar Chat", callback_data=f"archivar_{user_id}"),
+            InlineKeyboardButton("🗄️ Archivar", callback_data=f"archivar_{user_id}"),
             InlineKeyboardButton("✉️ Responder", callback_data=f"responder_{user_id}")
         ],
         [
             InlineKeyboardButton("⏰ Posponer", callback_data=f"posponer_opciones_{user_id}")
         ],
         [
-            InlineKeyboardButton("🔙 Volver", callback_data="volver_panel")
+            InlineKeyboardButton("🔙 Volver al panel", callback_data="volver_panel")
         ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await query.edit_message_text(msg, parse_mode="Markdown", reply_markup=reply_markup)
+    await query.edit_message_text(msg, parse_mode="HTML", reply_markup=reply_markup)
 
 async def gestion_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -351,16 +370,14 @@ async def filter_chats_callback(update: Update, context: ContextTypes.DEFAULT_TY
 
 async def resumen_chats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = _build_summary_message()
-    await update.message.reply_text(msg, parse_mode="Markdown")
+    await update.message.reply_text(msg, parse_mode="HTML")
 
 async def show_resumen_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     msg = _build_summary_message()
-    
     current_reply_markup = query.message.reply_markup
-
-    await query.edit_message_text(msg, parse_mode="Markdown", reply_markup=current_reply_markup)
+    await query.edit_message_text(msg, parse_mode="HTML", reply_markup=current_reply_markup)
 
 async def show_postpone_options_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id):
     query = update.callback_query
