@@ -11,22 +11,55 @@ El sistema está compuesto por dos bots principales:
 
 Ambos bots se comunican de forma indirecta a través de una base de datos SQLite compartida (`shared_messages.db`).
 
-## Configuración
 
-1.  **Clona el repositorio.**
-2.  **Crea un entorno virtual:**
-    ```bash
-    python3 -m venv venv
-    source venv/bin/activate
-    ```
-3.  **Instala las dependencias:**
-    ```bash
-    pip install -r requirements.txt
-    ```
-4.  **Crea un archivo `.env`** a partir del archivo `.env.example` y completa las variables de entorno:
-    - `TOKEN_BOTFATHER`: El token de tu bot de Telegram (el que usas para el panel de administración).
-    - `ADMIN_ID`: Tu ID de usuario de Telegram.
-    - `API_ID` y `API_HASH`: Tus credenciales de la API de Telegram (puedes obtenerlas en [my.telegram.org](https://my.telegram.org)).
+## Instalación y prueba en otra computadora
+
+Sigue estos pasos para instalar y probar el asistente en un entorno nuevo:
+
+1. **Clona el repositorio:**
+   ```bash
+   git clone <URL_DEL_REPOSITORIO>
+   cd Bussines_Assistant_Bot
+   ```
+
+2. **Crea un entorno virtual de Python:**
+   ```bash
+   python3 -m venv venv
+   source venv/bin/activate
+   ```
+
+3. **Instala las dependencias:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. **Configura las variables de entorno:**
+   - Copia el archivo `.env.example` a `.env`.
+   - Edita el archivo `.env` y coloca tus credenciales de Telegram:
+     - `TOKEN_BOTFATHER`: Token del bot de administración (Panel_Bot).
+     - `ADMIN_ID`: Tu ID de usuario de Telegram.
+     - `API_ID` y `API_HASH`: Credenciales de la API de Telegram ([my.telegram.org](https://my.telegram.org)).
+
+5. **(Opcional) Base de datos:**
+   - Si usas SQLite, asegúrate de que el archivo `shared_messages.db` esté presente. Si no existe, se creará automáticamente al iniciar los bots.
+
+6. **Inicia ambos bots en terminales separadas:**
+   ```bash
+   python3 User_Bot/src/bot/user_bot.py
+   ```
+   ```bash
+   python3 Panel_Bot/src/bot.py
+   ```
+
+7. **Prueba la interacción:**
+   - Escribe a tu bot de usuario en Telegram y verifica que responde.
+   - Ingresa al panel de administración (Panel_Bot) y verifica que puedes ver y gestionar los mensajes.
+
+---
+
+## Configuración avanzada
+
+Si necesitas personalizar la configuración, revisa y ajusta las variables del archivo `.env` según tus necesidades.
 
 ## Uso
 
