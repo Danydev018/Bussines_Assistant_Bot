@@ -65,7 +65,7 @@ async def handler(event):
         try:
             print(f"[DEBUG User_Bot] Enviando recomendación a {user_id}: nombre={rec['nombre']}, telefono={rec['telefono']}")
             await event.reply(
-                f"🤝 Te recomendamos contactar a:\n<b>{rec['nombre']}</b>\n📞 <code>{rec['telefono']}</code>",
+                f"🤝 Para resolver tu problematica Te recomendamos contactar a:\n<b>{rec['nombre']}</b>\n📞 <code>{rec['telefono']}</code>",
                 parse_mode="HTML"
             )
             mark_contact_recommendation_sent(user_id)
